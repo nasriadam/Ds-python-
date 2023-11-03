@@ -1,0 +1,310 @@
+import re
+import hashlib
+import bcrypt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+
+
+def is_valid_email(email):
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(email_pattern, email)
+
+
+def is_valid_password(pwd):
+    return any(char.isupper() for char in pwd) and \
+           any(char.islower() for char in pwd) and \
+           any(char.isdigit() for char in pwd) and \
+           any(not char.isalnum() for char in pwd) and \
+           len(pwd) >= 8
+
+
+def register(email, pwd):
+    with open("Enregistrement.txt", "a") as file:
+        file.write(f"{email}:{pwd}\n")
+
+def authenticate(email, pwd):
+    with open("Enregistrement.txt", "r") as file:
+        for line in file:
+            stored_email, stored_pwd = line.strip().split(":")
+            if email == stored_email and bcrypt.checkpw(pwd.encode('utf-8'), stored_pwd.encode('utf-8')):
+                return True
+    return False
+
+
+def sha256_hash(text):
+    sha256 = hashlib.sha256()
+    sha256.update(text.encode('utf-8'))
+    return sha256.hexdigest()
+
+
+def bcrypt_hash(pwd):
+    salt = bcrypt.gensalt()
+    hashed_pwd = bcrypt.hashpw(pwd.encode('utf-8'), salt)
+    return hashed_pwd
+
+
+def generate_rsa_keys():
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048
+    )
+    return private_key, private_key.public_key()
+
+
+def encrypt_message(message, public_key):
+    ciphertext = public_key.encrypt(
+        message.encode('utf-8'),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return ciphertext
+
+def decrypt_message(ciphertext, private_key):
+    plaintext = private_key.decrypt(
+        ciphertext,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return plaintext.decode('utf-8')
+
+
+def sign_message(message, private_key):
+    signature = private_key.sign(
+        message.encode('utf-8'),
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+    return signature
+
+
+def verify_signature(message, signature, public_key):
+    try:
+        public_key.verify(
+            signature,
+            message.encode('utf-8'),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return True
+    except Exception:
+        return False
+
+
+def main_menu():
+    while True:
+        print("Menu Principal:")
+        print("1. Enregistrement")
+        print("2. Authentification")
+        print("3. Quitter")
+
+        choice = input("Choisissez une option (1/2/3): ")
+
+        if choice == "1":
+            email = input("Entrez votre adresse email: ")
+            if not is_valid_email(email):
+                print("Adresse email invalide.")
+                continue
+            pwd = input("Entrez votre mot de passe: ")
+            if not is_valid_password(pwd):
+                print("Mot de passe invalide. Il doit contenir au moins 1 majuscule, 1 minuscule, 1 chiffre, 1 caractère spécial et avoir une longueur d'au moins 8.")
+                continue
+            register(email, bcrypt_hash(pwd))
+            print("Enregistrement réussi.")
+
+        elif choice == "2":
+            email = input("Entrez votre adresse email: ")
+            pwd = input("Entrez votre mot de passe: ")
+            if authenticate(email, pwd):
+                print("Authentification réussie.")
+                sub_menu()
+
+            else:
+                print("Authentification échouée. Veuillez vous enregistrer d'abord.")
+
+        elif choice == "3":
+            break
+
+        else:
+            print("Option invalide. Veuillez choisir une option valide.")
+
+def sub_menu():
+    while True:
+        print("Sous-menu:")
+        print("A. Hachage")
+        print("B. Chiffrement (RSA)")
+        print("C. Certificat (RSA)")
+        print("D. Retour au menu principal")
+
+        choice = input("Choisissez une option (A/B/C/D): ")
+
+        if choice == "A":
+            hash_menu()
+        elif choice == "B":
+            rsa_menu()
+        elif choice == "C":
+            certificate_menu()
+        elif choice == "D":
+            break
+        else:
+            print("Option invalide. Veuillez choisir une option valide.")
+
+def hash_menu():
+    while True:
+        print("Menu de Hachage:")
+        print("a. Hacher le mot par sha256")
+        print("b. Hacher le mot en générant un salt (bcrypt)")
+        print("c. Attaquer par dictionnaire le mot inséré")
+        print("d. Revenir au sous-menu")
+
+        choice = input("Choisissez une option (a/b/c/d): ")
+
+        if choice == "a":
+            text = input("Entrez le texte à hacher: ")
+            hashed_text = sha256_hash(text)
+            print(f"Résultat du hachage sha256 : {hashed_text}")
+        elif choice == "b":
+            text = input("Entrez le mot à hacher avec bcrypt : ")
+            hashed_text = bcrypt_hash(text)
+            print(f"Résultat du hachage bcrypt : {hashed_text}")
+        elif choice == "c":
+            print("Fonctionnalité d'attaque par dictionnaire non implémentée.")
+        elif choice == "d":
+            break
+        else:
+            print("Option invalide. Veuillez choisir une option valide.")
+
+def rsa_menu():
+    while True:
+        print("Menu de Chiffrement (RSA):")
+        print("a. Générer des paires de clés RSA")
+        print("b. Chiffrer un message")
+        print("c. Déchiffrer un message")
+        print("d. Signer un message")
+        print("e. Vérifier la signature")
+        print("f. Revenir au sous-menu")
+
+        choice = input("Choisissez une option (a/b/c/d/e/f): ")
+
+        if choice == "a":
+            private_key, public_key = generate_rsa_keys()
+            with open("private_key.pem", "wb") as private_key_file:
+                private_key_file.write(private_key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.TraditionalOpenSSL,
+                    encryption_algorithm=serialization.NoEncryption()
+                ))
+            with open("public_key.pem", "wb") as public_key_file:
+                public_key_file.write(public_key.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ))
+            print("Paires de clés RSA générées avec succès.")
+
+        elif choice == "b":
+            message = input("Entrez le message à chiffrer : ")
+            public_key_file = open("public_key.pem", "rb")
+            public_key = serialization.load_pem_public_key(public_key_file.read())
+            public_key_file.close()
+            ciphertext = encrypt_message(message, public_key)
+            print(f"Message chiffré : {ciphertext.hex()}")
+
+        elif choice == "c":
+            ciphertext = bytes.fromhex(input("Entrez le message chiffré en hexadécimal : "))
+            private_key_file = open("private_key.pem", "rb")
+            private_key = serialization.load_pem_private_key(private_key_file.read(), password=None)
+            private_key_file.close()
+            plaintext = decrypt_message(ciphertext, private_key)
+            print(f"Message déchiffré : {plaintext}")
+
+        elif choice == "d":
+            message = input("Entrez le message à signer : ")
+            private_key_file = open("private_key.pem", "rb")
+            private_key = serialization.load_pem_private_key(private_key_file.read(), password=None)
+            private_key_file.close()
+            signature = sign_message(message, private_key)
+            print(f"Signature : {signature.hex()}")
+
+        elif choice == "e":
+            message = input("Entrez le message à vérifier : ")
+            signature = bytes.fromhex(input("Entrez la signature en hexadécimal : "))
+            public_key_file = open("public_key.pem", "rb")
+            public_key = serialization.load_pem_public_key(public_key_file.read())
+            public_key_file.close()
+            if verify_signature(message, signature, public_key):
+                print("La signature est valide.")
+            else:
+                print("La signature est invalide.")
+
+        elif choice == "f":
+            break
+
+        else:
+            print("Option invalide. Veuillez choisir une option valide.")
+
+def certificate_menu():
+    while True:
+        print("Menu de Certificat (RSA):")
+        print("a. Générer des paires de clés RSA pour le certificat")
+        print("b. Générer un certificat autosigné")
+        print("c. Chiffrer un message par le certificat")
+        print("d. Revenir au sous-menu")
+
+        choice = input("Choisissez une option (a/b/c/d): ")
+
+        if choice == "a":
+            private_key, public_key = generate_rsa_keys()
+            with open("certificate_private_key.pem", "wb") as private_key_file:
+                private_key_file.write(private_key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.TraditionalOpenSSL,
+                    encryption_algorithm=serialization.NoEncryption()
+                ))
+            with open("certificate_public_key.pem", "wb") as public_key_file:
+                public_key_file.write(public_key.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ))
+            print("Paires de clés RSA pour le certificat générées avec succès.")
+
+        elif choice == "b":
+            private_key_file = open("certificate_private_key.pem", "rb")
+            private_key = serialization.load_pem_private_key(private_key_file.read(), password=None)
+            private_key_file.close()
+            certificate = private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            with open("self_signed_certificate.pem", "wb") as certificate_file:
+                certificate_file.write(certificate)
+            print("Certificat autosigné généré avec succès.")
+
+        elif choice == "c":
+            message = input("Entrez le message à chiffrer par le certificat : ")
+            certificate_file = open("self_signed_certificate.pem", "rb")
+            public_key = serialization.load_pem_public_key(certificate_file.read())
+            certificate_file.close()
+            ciphertext = encrypt_message(message, public_key)
+            print(f"Message chiffré par le certificat : {ciphertext.hex()}")
+
+        elif choice == "d":
+            break
+
+        else:
+            print("Option invalide. Veuillez choisir une option valide.")
+
+if __name__ == "__main__":
+    main_menu()
